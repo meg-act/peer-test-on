@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>PeerJS 通信テスト</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+body { font-family: sans-serif; background:#111; color:#eee; text-align:center; }
+input, button { font-size:16px; margin:4px; }
+#log { border:1px solid #555; height:200px; overflow:auto; padding:5px; }
+</style>
+</head>
+<body>
+
+<h1>PeerJS 通信テスト</h1>
+
+<button onclick="makeHost()">ホストになる</button><br>
+ID：<input id="roomId">
+<button onclick="joinRoom()">参加</button>
+
+<hr>
+
+<input id="msg" placeholder="メッセージ">
+<button onclick="send()">送信</button>
+
+<div id="log"></div>
+
+<script>
+let peer, conn;
+
+function log(t){
+  const l = document.getElementById("log");
+  l.innerHTML += t + "<br>";
+  l.scrollTop = l.scrollHeight;
+}
+
+function makeHost(){
+  peer = new Peer();
+  peer.on("open", id=>{
+    document.getElementById("roomId").value = id;
+    log("ホストID生成: " + id);
+  });
+  peer.on("connection", c=>{
+    conn = c;
+    log("相手が接続しました");
+    setup();
+  });
+}
+
+function joinRoom(){
+  peer = new Peer();
+  conn = peer.connect(document.getElementById("roomId").value);
+  conn.on("open", ()=>{
+    log("ホストに接続しました");
+    setup();
+  });
+}
+
+function setup(){
+  conn.on("data", data=>{
+    log("受信: " + data);
+  });
+}
+
+function send(){
+  if(!conn){
+    log("まだ接続されていません");
+    return;
+  }
+  const m = document.getElementById("msg").value;
+  conn.send(m);
+  log("送信: " + m);
+}
+</script>
+
+</body>
+</html>
