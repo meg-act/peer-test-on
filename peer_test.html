@@ -2,76 +2,85 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>PeerJS 通信テスト</title>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<title>限界しりとり</title>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
-body { font-family: sans-serif; background:#111; color:#eee; text-align:center; }
-input, button { font-size:16px; margin:4px; }
-#log { border:1px solid #555; height:200px; overflow:auto; padding:5px; }
+body{background:#111;color:#eee;font-family:sans-serif;text-align:center}
+input,button{font-size:16px}
+#log{height:200px;overflow:auto;border:1px solid #555;padding:5px}
+.timer{font-size:22px}
 </style>
 </head>
 <body>
 
-<h1>PeerJS 通信テスト</h1>
+<h1>限界しりとり</h1>
 
-<button onclick="makeHost()">ホストになる</button><br>
-ID：<input id="roomId">
-<button onclick="joinRoom()">参加</button>
+部屋ID：<input id="room"><button onclick="join()">入室</button>
 
-<hr>
+<div class="timer">
+自分 ⏳ <span id="me">900</span>s /
+相手 ⏳ <span id="you">900</span>s
+</div>
 
-<input id="msg" placeholder="メッセージ">
-<button onclick="send()">送信</button>
-
+<input id="word"><button onclick="send()">送信</button>
 <div id="log"></div>
 
 <script>
-let peer, conn;
+// ★ここを書き換える
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_DOMAIN",
+  databaseURL: "YOUR_DB_URL",
+  projectId: "YOUR_ID",
+  appId: "YOUR_APP_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+let roomId, myId = Math.random().toString(36).slice(2);
+let myTurn = false;
+let me = 900, you = 900;
 
 function log(t){
-  const l = document.getElementById("log");
-  l.innerHTML += t + "<br>";
-  l.scrollTop = l.scrollHeight;
+  const l=document.getElementById("log");
+  l.innerHTML+=t+"<br>";
+  l.scrollTop=l.scrollHeight;
 }
 
-function makeHost(){
-  peer = new Peer();
-  peer.on("open", id=>{
-    document.getElementById("roomId").value = id;
-    log("ホストID生成: " + id);
-  });
-  peer.on("connection", c=>{
-    conn = c;
-    log("相手が接続しました");
-    setup();
-  });
-}
+setInterval(()=>{
+  if(!roomId) return;
+  if(myTurn) me--; else you--;
+  document.getElementById("me").textContent=me;
+  document.getElementById("you").textContent=you;
+},1000);
 
-function joinRoom(){
-  peer = new Peer();
-  conn = peer.connect(document.getElementById("roomId").value);
-  conn.on("open", ()=>{
-    log("ホストに接続しました");
-    setup();
+function join(){
+  roomId = document.getElementById("room").value;
+  const ref = db.ref("rooms/"+roomId);
+  ref.child("players/"+myId).set(true);
+  ref.on("value", snap=>{
+    const v=snap.val();
+    if(!v) return;
+    myTurn = Object.keys(v.players)[0] === myId;
+    if(v.last && v.last.from!==myId){
+      log("相手: "+v.last.word);
+    }
   });
-}
-
-function setup(){
-  conn.on("data", data=>{
-    log("受信: " + data);
-  });
+  log("入室しました");
 }
 
 function send(){
-  if(!conn){
-    log("まだ接続されていません");
-    return;
-  }
-  const m = document.getElementById("msg").value;
-  conn.send(m);
-  log("送信: " + m);
+  if(!myTurn) return;
+  const w=document.getElementById("word").value;
+  if(!w) return;
+  db.ref("rooms/"+roomId+"/last").set({
+    word:w, from:myId, t:Date.now()
+  });
+  log("自分: "+w);
+  document.getElementById("word").value="";
 }
 </script>
-
 </body>
 </html>
