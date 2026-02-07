@@ -1,86 +1,153 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>限界しりとり</title>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<style>
-body{background:#111;color:#eee;font-family:sans-serif;text-align:center}
-input,button{font-size:16px}
-#log{height:200px;overflow:auto;border:1px solid #555;padding:5px}
-.timer{font-size:22px}
-</style>
+  <meta charset="UTF-8" />
+  <title>限界しりとり</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    #app {
+      width: 90%;
+      max-width: 400px;
+      text-align: center;
+    }
+    input, button {
+      font-size: 1.1em;
+      padding: 8px;
+      margin: 5px;
+      width: 90%;
+    }
+    #log {
+      margin-top: 10px;
+      height: 120px;
+      overflow-y: auto;
+      border: 1px solid #444;
+      padding: 5px;
+      text-align: left;
+      font-size: 0.9em;
+    }
+  </style>
 </head>
 <body>
+  <div id="app">
+    <h2>限界しりとり（通信テスト）</h2>
 
-<h1>限界しりとり</h1>
+    <input id="roomInput" placeholder="部屋ID（例: test123）" />
+    <button onclick="joinRoom()">入室</button>
 
-部屋ID：<input id="room"><button onclick="join()">入室</button>
+    <hr />
 
-<div class="timer">
-自分 ⏳ <span id="me">900</span>s /
-相手 ⏳ <span id="you">900</span>s
-</div>
+    <div id="game" style="display:none;">
+      <div>あなたのID: <span id="myId"></span></div>
+      <div>状態: <span id="status">待機中</span></div>
 
-<input id="word"><button onclick="send()">送信</button>
-<div id="log"></div>
+      <input id="wordInput" placeholder="ことば" />
+      <button onclick="sendWord()">送信</button>
 
-<script>
-// ★ここを書き換える
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_DOMAIN",
-  databaseURL: "YOUR_DB_URL",
-  projectId: "YOUR_ID",
-  appId: "YOUR_APP_ID"
-};
+      <div id="log"></div>
+    </div>
+  </div>
 
-firebase.initializeApp(firebaseConfig);
-const db = firebase.database();
+  <script>
+    /************
+     * 変数定義（最重要）
+     ************/
+    let roomId = null;
+    let myTurn = false;
+    let myId = Math.random().toString(36).slice(2, 8);
 
-let roomId, myId = Math.random().toString(36).slice(2);
-let myTurn = false;
-let me = 900, you = 900;
+    /************
+     * Firebase設定（★自分のに差し替え★）
+     ************/
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+      projectId: "YOUR_PROJECT",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "XXXX",
+      appId: "XXXX"
+    };
 
-function log(t){
-  const l=document.getElementById("log");
-  l.innerHTML+=t+"<br>";
-  l.scrollTop=l.scrollHeight;
-}
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-setInterval(()=>{
-  if(!roomId) return;
-  if(myTurn) me--; else you--;
-  document.getElementById("me").textContent=me;
-  document.getElementById("you").textContent=you;
-},1000);
+    /************
+     * 入室
+     ************/
+    function joinRoom() {
+      roomId = document.getElementById("roomInput").value;
+      if (!roomId) return alert("部屋IDを入れて");
 
-function join(){
-  roomId = document.getElementById("room").value;
-  const ref = db.ref("rooms/"+roomId);
-  ref.child("players/"+myId).set(true);
-  ref.on("value", snap=>{
-    const v=snap.val();
-    if(!v) return;
-    myTurn = Object.keys(v.players)[0] === myId;
-    if(v.last && v.last.from!==myId){
-      log("相手: "+v.last.word);
+      document.getElementById("game").style.display = "block";
+      document.getElementById("myId").textContent = myId;
+
+      const roomRef = db.ref("rooms/" + roomId);
+
+      roomRef.child("users/" + myId).set(true);
+
+      roomRef.child("log").limitToLast(10).on("child_added", snap => {
+        addLog(snap.val());
+      });
+
+      roomRef.child("turn").on("value", snap => {
+        myTurn = snap.val() === myId;
+        document.getElementById("status").textContent =
+          myTurn ? "あなたの番" : "相手の番";
+      });
+
+      // 最初の人がターンを取る
+      roomRef.child("turn").once("value", snap => {
+        if (!snap.exists()) {
+          roomRef.child("turn").set(myId);
+        }
+      });
     }
-  });
-  log("入室しました");
-}
 
-function send(){
-  if(!myTurn) return;
-  const w=document.getElementById("word").value;
-  if(!w) return;
-  db.ref("rooms/"+roomId+"/last").set({
-    word:w, from:myId, t:Date.now()
-  });
-  log("自分: "+w);
-  document.getElementById("word").value="";
-}
-</script>
+    /************
+     * 送信
+     ************/
+    function sendWord() {
+      if (!myTurn) return alert("あなたの番じゃない");
+
+      const word = document.getElementById("wordInput").value;
+      if (!word) return;
+
+      const roomRef = db.ref("rooms/" + roomId);
+
+      roomRef.child("log").push(myId + ": " + word);
+
+      // 次のターンへ
+      roomRef.child("users").once("value", snap => {
+        const users = Object.keys(snap.val());
+        const next = users.find(u => u !== myId);
+        if (next) roomRef.child("turn").set(next);
+      });
+
+      document.getElementById("wordInput").value = "";
+    }
+
+    function addLog(text) {
+      const log = document.getElementById("log");
+      const div = document.createElement("div");
+      div.textContent = text;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+  </script>
 </body>
 </html>
